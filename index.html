@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Nigeria Life — First Playable Prototype</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#17251c;font-family:system-ui,Arial;color:#fff}
+#game{display:block;width:100vw;height:100vh;touch-action:none}
+#hud{position:fixed;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;gap:8px;pointer-events:none}
+.pill{background:#101a17d9;border:1px solid #ffffff2b;border-radius:12px;padding:8px 11px;font-size:12px;box-shadow:0 3px 12px #0005}
+#help{position:fixed;top:58px;left:10px;max-width:245px;background:#101a17d9;border:1px solid #ffffff2b;border-radius:12px;padding:9px 11px;font-size:12px;line-height:1.45}
+#controls{position:fixed;bottom:14px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:end;pointer-events:none}
+.pad{display:grid;grid-template-columns:48px 48px 48px;grid-template-rows:48px 48px 48px;gap:5px;pointer-events:auto}
+button{border:1px solid #ffffff55;background:#14251ee6;color:#fff;border-radius:13px;font-size:19px;font-weight:700;touch-action:none}
+.pad .up{grid-column:2;grid-row:1}.pad .left{grid-column:1;grid-row:2}.pad .down{grid-column:2;grid-row:2}.pad .right{grid-column:3;grid-row:2}
+.actions{display:flex;gap:7px;pointer-events:auto;align-items:end;flex-wrap:wrap;justify-content:end;max-width:190px}
+.actions button{font-size:12px;padding:12px 10px;min-height:43px}
+#toast{position:fixed;left:50%;bottom:130px;transform:translateX(-50%);background:#101a17e8;padding:9px 13px;border-radius:10px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
+@media (orientation:portrait){#help{max-width:190px} .pad{transform:scale(.86);transform-origin:bottom left}.actions{max-width:150px}.actions button{padding:10px 8px}}
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Nigeria Life game canvas"></canvas>
+<div id="hud"><div class="pill"><b>🇳🇬 NIGERIA LIFE</b><br>Prototype • Lagos District</div><div class="pill" id="stats">Walking • Camera 0°</div></div>
+<div id="help"><b>How to play</b><br>Use the direction pad or WASD / arrow keys to walk. Drag across the world to turn the camera. Tap <b>360°</b> to rotate the view. This is an early playable prototype.</div>
+<div id="controls">
+  <div class="pad">
+    <button class="up" data-move="forward" aria-label="Forward">▲</button>
+    <button class="left" data-move="left" aria-label="Left">◀</button>
+    <button class="down" data-move="back" aria-label="Back">▼</button>
+    <button class="right" data-move="right" aria-label="Right">▶</button>
+  </div>
+  <div class="actions">
+    <button id="rotate">360° VIEW</button><button id="horn">CAR HORN</button><button id="daynight">DAY / NIGHT</button>
+  </div>
+</div>
+<div id="toast"></div>
+<script>
+(() => {
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+let W=0,H=0,dpr=1,angle=0,day=true,player={x:0,z:0},keys={},touchMove={},dragging=false,lastX=0,walk=0,hornUntil=0;
+const buildings=[];
+for(let z=-8;z<=12;z+=2){buildings.push({x:-4.8,z,w:1.5,h:1.6+(Math.abs(z)%3)*.35,c:['#d5a35f','#d9d1bd','#d76c48','#9ab3a0'][Math.abs(z)%4]});buildings.push({x:4.8,z:z+.6,w:1.55,h:1.4+(Math.abs(z+1)%3)*.35,c:['#d9d1bd','#c98e51','#a6b9a4','#d76c48'][Math.abs(z+1)%4]});}
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+function project(x,z,y=0){let dx=x-player.x,dz=z-player.z;let ca=Math.cos(angle),sa=Math.sin(angle);let rx=dx*ca-dz*sa,rz=dx*sa+dz*ca;let horizon=H*.40,scale=H/(Math.max(2,rz+8));return {x:W/2+rx*scale*.7,y:horizon+(14-rz)*scale*.32-y*scale*.72,s:scale,rz}}
+function polygon(points,fill,stroke){ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.stroke()}}
+function line(a,b,color,width=1){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
+function drawBuilding(b){let p=project(b.x,b.z),q=project(b.x+b.w,b.z),r=project(b.x+b.w,b.z+1.4),s=project(b.x,b.z+1.4);if(p.rz < -5)return;
+let top=project(b.x,b.z,b.h),top2=project(b.x+b.w,b.z,b.h),top3=project(b.x+b.w,b.z+1.4,b.h),top4=project(b.x,b.z+1.4,b.h);
+polygon([s,r,q,p],b.c);polygon([s,p,top,top4],'#e9d8b9');polygon([p,q,top2,top],'#b6a184');polygon([top,top2,top3,top4],'#ead7b7');
+for(let wx=0;wx<2;wx++){let xx=b.x+.28+wx*.62;let a=project(xx,b.z-.015,b.h*.55),bb=project(xx+.25,b.z-.015,b.h*.55),cc=project(xx+.25,b.z-.015,b.h*.82),dd=project(xx,b.z-.015,b.h*.82);polygon([a,bb,cc,dd],'#314d58')}
+}
+function drawCar(x,z,color,scale=1){let a=project(x-.48*scale,z),b=project(x+.48*scale,z),c=project(x+.48*scale,z+.8*scale),d=project(x-.48*scale,z+.8*scale);polygon([a,b,c,d],color);let roof1=project(x-.28*scale,z+.12*scale,.35*scale),roof2=project(x+.28*scale,z+.12*scale,.35*scale),roof3=project(x+.28*scale,z+.62*scale,.35*scale),roof4=project(x-.28*scale,z+.62*scale,.35*scale);polygon([roof1,roof2,roof3,roof4],'#b8d5d8');}
+function drawPerson(x,z,color){let p=project(x,z);if(p.rz<0)return;ctx.fillStyle=color;ctx.beginPath();ctx.arc(p.x,p.y-8*p.s/2,Math.max(2,3*p.s/4),0,Math.PI*2);ctx.fill();ctx.fillRect(p.x-2*p.s/3,p.y-6*p.s/2,4*p.s/3,7*p.s/2)}
+function draw(){ctx.clearRect(0,0,W,H);
+let sky=ctx.createLinearGradient(0,0,0,H);sky.addColorStop(0,day?'#75bfe6':'#101c38');sky.addColorStop(.55,day?'#e7d5a3':'#283957');sky.addColorStop(.56,day?'#8b9b55':'#354737');sky.addColorStop(1,day?'#485c36':'#17291f');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+ctx.fillStyle=day?'#ffe9a2':'#d7dce8';ctx.beginPath();ctx.arc(W*.82,H*.15,day?25:17,0,Math.PI*2);ctx.fill();
+// road and shoulders
+polygon([project(-2.6,-30),project(2.6,-30),project(2.6,35),project(-2.6,35)],day?'#4b4d4e':'#272e34');
+polygon([project(-3.3,-30),project(-2.6,-30),project(-2.6,35),project(-3.3,35)],'#c6b89a');
+polygon([project(2.6,-30),project(3.3,-30),project(3.3,35),project(2.6,35)],'#c6b89a');
+for(let z=-25;z<35;z+=3){line(project(0,z),project(0,z+1.35),day?'#f5e4a0':'#b8b7a0',2)}
+// roadside stalls and signboards
+for(let z=-12;z<25;z+=5){let p=project(-3.5,z);if(p.rz>0){ctx.fillStyle='#b94b35';ctx.fillRect(p.x-12*p.s/5,p.y-16*p.s/5,24*p.s/5,14*p.s/5);ctx.fillStyle='#f5d27d';ctx.fillRect(p.x-12*p.s/5,p.y-18*p.s/5,24*p.s/5,4*p.s/5);ctx.fillStyle='#fff';ctx.font=`${Math.max(5,7*p.s/3)}px sans-serif`;ctx.fillText('MARKET',p.x-10*p.s/5,p.y-8*p.s/5)}}
+buildings.sort((a,b)=>Math.hypot(b.x-player.x,b.z-player.z)-Math.hypot(a.x-player.x,a.z-player.z)).forEach(drawBuilding);
+let trafficZ=((performance.now()/650)%28)-14;drawCar(-.95,trafficZ,'#d9a72e',.8);drawCar(1.05,trafficZ-7,'#4e9bd1',.85);drawPerson(-2.9,3+Math.sin(performance.now()/900)*.5,'#f2b64b');drawPerson(3.25,8+Math.sin(performance.now()/1100)*.5,'#e9e3cf');
+// player avatar centered foreground
+let px=W/2,py=H*.75;ctx.fillStyle='#0004';ctx.beginPath();ctx.ellipse(px,py+7,12,5,0,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='#603c25';ctx.beginPath();ctx.arc(px,py-29,8,0,Math.PI*2);ctx.fill();ctx.fillStyle='#12834c';ctx.fillRect(px-7,py-22,14,20);ctx.fillStyle='#e8b98a';ctx.fillRect(px-6,py-2,5,13);ctx.fillRect(px+2,py-2,5,13);ctx.fillStyle='#fff';ctx.fillRect(px-7,py-19,14,3);
+if(performance.now()<hornUntil){ctx.fillStyle='#fff';ctx.font='bold 16px sans-serif';ctx.fillText('PON PON!',px+18,py-35)}
+document.getElementById('stats').textContent=`Walking • Camera ${Math.round(((angle*180/Math.PI)%360+360)%360)}° • ${day?'Day':'Night'}`;
+requestAnimationFrame(draw)}
+function move(){let f=(keys.ArrowUp||keys.w||touchMove.forward?1:0)-(keys.ArrowDown||keys.s||touchMove.back?1:0),side=(keys.ArrowRight||keys.d||touchMove.right?1:0)-(keys.ArrowLeft||keys.a||touchMove.left?1:0);if(f||side){player.x+=Math.sin(angle)*f*.09+Math.cos(angle)*side*.07;player.z+=-Math.cos(angle)*f*.09+Math.sin(angle)*side*.07;walk+=.1}}
+addEventListener('keydown',e=>{keys[e.key]=true;if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault()});addEventListener('keyup',e=>keys[e.key]=false);
+document.querySelectorAll('[data-move]').forEach(b=>{let k=b.dataset.move;const on=e=>{e.preventDefault();touchMove[k]=true},off=e=>{e.preventDefault();touchMove[k]=false};b.addEventListener('pointerdown',on);['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,off))});
+canvas.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;canvas.setPointerCapture(e.pointerId)});canvas.addEventListener('pointermove',e=>{if(dragging){angle+=(e.clientX-lastX)*.009;lastX=e.clientX}});canvas.addEventListener('pointerup',()=>dragging=false);canvas.addEventListener('pointercancel',()=>dragging=false);
+document.getElementById('rotate').onclick=()=>{angle+=Math.PI*2;toast('Camera rotated through 360°')};
+document.getElementById('horn').onclick=()=>{hornUntil=performance.now()+900;toast('Car horn!')};
+document.getElementById('daynight').onclick=()=>{day=!day;toast(day?'Daytime':'Night-time')};
+function toast(s){let t=document.getElementById('toast');t.textContent=s;t.style.opacity=1;clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.style.opacity=0,1400)}
+requestAnimationFrame(draw);setInterval(move,16);
+})();
+</script>
+</body>
+</html>
